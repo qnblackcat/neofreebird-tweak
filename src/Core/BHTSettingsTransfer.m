@@ -8,6 +8,7 @@
 #import "Core/BHTSettingsTransfer.h"
 #import "Core/BHTBundle.h"
 #import "Core/BHTSettings.h"
+#import "AppIcon/AppIconItem.h"
 #import "Headers/Helpers.h"
 
 NSString* const BHTSettingsTransferErrorDomain = @"com.neofreebird.settings-transfer";
@@ -249,6 +250,15 @@ static NSError* BHTTransferError(BHTSettingsTransferErrorCode code, NSString* me
     if ([keys containsObject:kAppIconKey] &&
         [UIApplication sharedApplication].supportsAlternateIcons) {
         NSString* iconName = [defaults stringForKey:kAppIconKey];
+
+        // Icons from TwitterRebrand are not known to iOS; only pass the choice on.
+        if ([iconName hasPrefix:AppIconVirtualPrefix]) {
+            AppIconNotifyOverride([iconName substringFromIndex:AppIconVirtualPrefix.length]);
+            return;
+        }
+        // No saved choice (settings reset): TwitterRebrand goes back to its default.
+        AppIconNotifyOverride(iconName ? @"none" : @"ProductionAppIcon");
+
         NSString* toSet = [iconName isEqualToString:kPrimaryIconSentinel] ? nil : iconName;
         [[UIApplication sharedApplication] setAlternateIconName:toSet
                                               completionHandler:^(NSError* error){}];

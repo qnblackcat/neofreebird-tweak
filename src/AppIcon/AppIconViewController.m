@@ -7,6 +7,7 @@
 //
 
 #import "AppIconViewController.h"
+#import <ImageIO/ImageIO.h>
 #import <UIKit/UIKit.h>
 #import "AppIconCell.h"
 #import "AppIconItem.h"
@@ -21,6 +22,32 @@ extern UIColor* CurrentAccentColor(void);
 // reinstalls), so the last choice made here is what the radios trust.
 static NSString* const kLastSelectedIconKey = @"bh_last_selected_app_icon";
 static NSString* const kPrimaryIconSentinel = @"PrimaryIcon";
+// The icon TwitterRebrand draws until another one is chosen.
+static NSString* const kDefaultVirtualIcon = @"ProductionAppIcon";
+
+// Small preview of a 1024px icon PNG, decoded at thumbnail size instead of
+// loading the full image for every cell.
+static UIImage* VirtualIconThumbnail(NSString* path) {
+    CGImageSourceRef source =
+        CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:path], NULL);
+    if (!source)
+        return nil;
+    NSDictionary* options = @{
+        (__bridge id)kCGImageSourceCreateThumbnailFromImageAlways : @YES,
+        (__bridge id)kCGImageSourceCreateThumbnailWithTransform : @YES,
+        (__bridge id)kCGImageSourceThumbnailMaxPixelSize : @360,
+    };
+    CGImageRef image =
+        CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)options);
+    CFRelease(source);
+    if (!image)
+        return nil;
+    UIImage* result = [UIImage imageWithCGImage:image
+                                          scale:[UIScreen mainScreen].scale
+                                    orientation:UIImageOrientationUp];
+    CGImageRelease(image);
+    return result;
+}
 
 @interface UIColor (NativeTokens_AppIconVC)
 + (id)tfnuiColors;
@@ -191,6 +218,14 @@ static NSString* AppIconDetailText(void) {
             }
         }
 
+        // Icons shipped by TwitterRebrand (e.g. the Twitter bird). They are not in
+        // Info.plist, so they are listed after the ones iOS knows about.
+        for (AppIconItem* item in AppIconVirtualItems()) {
+            if ([strongSelf thumbnailForItem:item traitCollection:traitCollection]) {
+                [items addObject:item];
+            }
+        }
+
         dispatch_async(dispatch_get_main_queue(), ^{
             AppIconViewController* currentSelf = weakSelf;
             if (!currentSelf)
@@ -212,6 +247,13 @@ static NSString* AppIconDetailText(void) {
     UIImage* cachedImage = [self.thumbnailCache objectForKey:item];
     if (cachedImage)
         return cachedImage;
+
+    if (item.virtualIconPath) {
+        UIImage* thumbnail = VirtualIconThumbnail(item.virtualIconPath);
+        if (thumbnail)
+            [self.thumbnailCache setObject:thumbnail forKey:item];
+        return thumbnail;
+    }
 
     NSBundle* bundle = [NSBundle mainBundle];
 
@@ -248,12 +290,30 @@ static NSString* AppIconDetailText(void) {
     return img;
 }
 
+- (BOOL)hasVirtualIcons {
+    for (AppIconItem* item in self.icons) {
+        if (item.virtualIconPath)
+            return YES;
+    }
+    return NO;
+}
+
 - (BOOL)isItemActive:(AppIconItem*)item {
     NSString* saved = [[NSUserDefaults standardUserDefaults]
         stringForKey:kLastSelectedIconKey];
     NSString* current =
         saved ?: [UIApplication sharedApplication].alternateIconName;
 
+    // With TwitterRebrand installed and nothing chosen yet, it draws its default
+    // icon, whatever the real alternate icon is.
+    if (!saved && [self hasVirtualIcons]) {
+        current = [AppIconVirtualPrefix stringByAppendingString:kDefaultVirtualIcon];
+    }
+
+    if (item.virtualIconPath) {
+        return [current isEqualToString:[AppIconVirtualPrefix
+                                            stringByAppendingString:item.bundleIconName]];
+    }
     if (item.isPrimaryIcon) {
         return current == nil || [current isEqualToString:kPrimaryIconSentinel];
     }
@@ -289,14 +349,29 @@ static NSString* AppIconDetailText(void) {
 
 - (void)collectionView:(UICollectionView*)cv
     didSelectItemAtIndexPath:(NSIndexPath*)ip {
-    if (![UIApplication sharedApplication].supportsAlternateIcons)
-        return;
-
     AppIconItem* item = self.icons[ip.row];
     if ([self isItemActive:item])
         return;
 
+    // A virtual icon never goes through iOS: TwitterRebrand draws it on the Home
+    // Screen, so only the choice is remembered and passed on.
+    if (item.virtualIconPath) {
+        [[NSUserDefaults standardUserDefaults]
+            setObject:[AppIconVirtualPrefix stringByAppendingString:item.bundleIconName]
+               forKey:kLastSelectedIconKey];
+        [cv reloadData];
+        AppIconNotifyOverride(item.bundleIconName);
+        return;
+    }
+
+    if (![UIApplication sharedApplication].supportsAlternateIcons)
+        return;
+
     NSString* toSet = item.isPrimaryIcon ? nil : item.bundleIconName;
+
+    // Back to a real icon: stop TwitterRebrand overriding it.
+    if ([self hasVirtualIcons])
+        AppIconNotifyOverride(@"none");
 
     [[NSUserDefaults standardUserDefaults]
         setObject:(toSet ?: kPrimaryIconSentinel)

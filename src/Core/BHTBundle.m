@@ -6,6 +6,9 @@
 //
 
 #import "BHTBundle.h"
+#ifdef THEOS_PACKAGE_SCHEME_ROOTHIDE
+#import <roothide.h>
+#endif
 
 @interface BHTBundle ()
 @property (nonatomic, strong) NSBundle* mainBundle;
@@ -18,6 +21,14 @@
     dispatch_once(&onceToken, ^{
         NSFileManager* fileManager = [NSFileManager defaultManager];
         NSURL* bundlePath = nil;
+#ifdef THEOS_PACKAGE_SCHEME_ROOTHIDE
+        // Roothide has no fixed prefix: resolve the path through jbroot().
+        NSString* roothidePath =
+            jbroot(@"/Library/Application Support/BHT/BHTwitter.bundle");
+        if ([fileManager fileExistsAtPath:roothidePath]) {
+            bundlePath = [NSURL fileURLWithPath:roothidePath];
+        } else
+#endif
         if ([fileManager
                 fileExistsAtPath:
                     @"/Library/Application Support/BHT/BHTwitter.bundle"]) {

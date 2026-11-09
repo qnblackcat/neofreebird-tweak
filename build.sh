@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # NeoFreeBird builder with required flags.
-# Usage: build.sh [--sideloaded | --rootless | --trollstore | --rootfull]
+# Usage: build.sh [--sideloaded | --rootless | --roothide | --trollstore | --rootfull]
 
 is_tty=0
 if [[ -t 1 ]]; then is_tty=1; fi
@@ -47,12 +47,13 @@ die() { err "$1"; exit 1; }
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--sideloaded | --rootless | --trollstore | --rootfull]
+Usage: $(basename "$0") [--sideloaded | --rootless | --roothide | --trollstore | --rootfull]
 TL;DR: You need to select one flag to build NeoFreeBird.
 
 Flags (required):
   --sideloaded   Compile NeoFreeBird as a .ipa so you can sideload it with AltStore, Sideloadly or similar.
   --rootless     Compile NeoFreeBird as a .deb file that does not require a jailbreak.
+  --roothide     Compile NeoFreeBird as a .deb file for roothide jailbreaks.
   --trollstore   Compile NeoFreeBird as a .tipa so you can install it using TrollStore.
   --rootfull     Compile NeoFreeBird as a .deb file that requires a jailbreak.
 
@@ -81,6 +82,10 @@ while [[ $# -gt 0 ]]; do
     --rootless|--rootless=*)
       [[ -n "$MODE" ]] && die "Multiple flags provided. Choose one."
       MODE="rootless"; shift
+      ;;
+    --roothide)
+      [[ -n "$MODE" ]] && die "Multiple flags provided. Choose one."
+      MODE="roothide"; shift
       ;;
     --trollstore)
       [[ -n "$MODE" ]] && die "Multiple flags provided. Choose one."
@@ -151,6 +156,13 @@ case "$MODE" in
     say "Preparing to compile NeoFreeBird. Argument added: --rootless."
     clean_tree
     export THEOS_PACKAGE_SCHEME="rootless"
+    make package
+    say "NeoFreeBird has been successfully built. Enjoy!"
+    ;;
+  roothide)
+    say "Preparing to compile NeoFreeBird. Argument added: --roothide."
+    clean_tree
+    export THEOS_PACKAGE_SCHEME="roothide"
     make package
     say "NeoFreeBird has been successfully built. Enjoy!"
     ;;
